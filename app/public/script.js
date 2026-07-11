@@ -15,6 +15,7 @@ const settingsToggle = document.getElementById('settings-toggle');
 const settingsPanel = document.getElementById('settings-panel');
 const closeSettingsBtn = document.getElementById('close-settings');
 const groupBySubEl = document.getElementById('group-by-sub');
+const groupBySubLabel = groupBySubEl.closest('.checkbox-label');
 const maxPostsEl = document.getElementById('max-posts');
 const subListEl = document.getElementById('sub-list');
 const settingsNoteEl = document.getElementById('settings-note');
@@ -155,6 +156,14 @@ function renderTabs() {
 
 function render() {
   if (!lastData) return;
+
+  // "Group by subreddit" only affects the combined "All" view. On a single-sub
+  // tab it's a no-op, so grey the toggle out to make that obvious rather than
+  // let it look broken (flipping it would appear to do nothing).
+  const onAllTab = activeSub === ALL_TAB;
+  groupBySubEl.disabled = !onAllTab;
+  if (groupBySubLabel) groupBySubLabel.classList.toggle('disabled', !onAllTab);
+
   const hidden = new Set(settings.hiddenSubs);
   let posts = (lastData.posts || []).filter(p => !hidden.has(p.subreddit));
 
