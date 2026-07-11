@@ -322,7 +322,9 @@ body {
 .hidden { display: none !important; }
 
 /* Slim scrollbar that respects the theme */
+.feed, .sub-list { scrollbar-color: var(--color-widget-content-border) transparent; }
 .feed::-webkit-scrollbar, .sub-list::-webkit-scrollbar { width: 6px; }
+.feed::-webkit-scrollbar-track, .sub-list::-webkit-scrollbar-track { background: transparent; }
 .feed::-webkit-scrollbar-thumb, .sub-list::-webkit-scrollbar-thumb {
   background: var(--color-widget-content-border);
   border-radius: 3px;
@@ -339,6 +341,7 @@ body {
   margin-bottom: 0.4rem;
   border-bottom: 1px solid var(--color-widget-content-border);
   scrollbar-width: thin;
+  scrollbar-color: var(--color-widget-content-border) transparent;
 }
 
 .tab {
@@ -362,6 +365,7 @@ body {
 }
 
 .tabs::-webkit-scrollbar { height: 5px; }
+.tabs::-webkit-scrollbar-track { background: transparent; }
 .tabs::-webkit-scrollbar-thumb {
   background: var(--color-widget-content-border);
   border-radius: 3px;
