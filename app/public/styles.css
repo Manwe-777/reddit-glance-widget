@@ -35,7 +35,7 @@
 
   /* Font sizes */
   --font-size-h4: 1.4rem;
-  --font-size-base: 1.3rem;
+  --font-size-base: 1.35rem;
   --font-size-h5: 1.2rem;
   --font-size-h6: 1.1rem;
 }
@@ -269,19 +269,19 @@ body {
   gap: 0.4rem;
   margin-top: 0.4rem;
   font-size: var(--font-size-h6);
-  color: var(--color-text-subdue);
+  color: var(--color-text-primary);
 }
 .post-meta .dot { opacity: 0.5; }
-.post-meta .score { color: var(--color-text-base); }
+.post-meta .score { color: var(--color-positive); font-weight: 600;}
 .post-meta .sub {
-  color: var(--color-primary);
+  color: #FF914D;
   opacity: 0.85;
 }
 .post-meta .flair {
   padding: 0.05rem 0.5rem;
   border: 1px solid var(--color-widget-content-border);
   border-radius: 999px;
-  color: var(--color-text-subdue);
+  color: var(--color-primary);
 }
 
 /* --- States / footer ----------------------------------------------------- */
@@ -324,4 +324,64 @@ body {
 .feed::-webkit-scrollbar-thumb, .sub-list::-webkit-scrollbar-thumb {
   background: var(--color-widget-content-border);
   border-radius: 3px;
+}
+
+/* --- Tabs ------------------------------------------------------------ */
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-shrink: 0;
+  padding-bottom: 0.6rem;
+  margin-bottom: 0.4rem;
+  border-bottom: 1px solid var(--color-widget-content-border);
+  scrollbar-width: thin;
+}
+
+.tab {
+  flex-shrink: 0;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-widget-content-border);
+  background: var(--color-background);
+  color: var(--color-text-highlight);
+  font-size: var(--font-size-h5);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.tab:hover { color: var(--color-text-base); }
+.tab.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-widget-background);
+  font-weight: 500;
+}
+
+.tabs::-webkit-scrollbar { height: 5px; }
+.tabs::-webkit-scrollbar-thumb {
+  background: var(--color-widget-content-border);
+  border-radius: 3px;
+}
+
+.post.has-thumb {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+}
+
+.post-thumb {
+  width: 4.4rem;
+  height: 4.4rem;
+  object-fit: cover;
+  border-radius: var(--border-radius);
+  flex-shrink: 0;
+  background: var(--color-background);
+}
+
+.post-body {
+  display: block;
+  min-width: 0;
+  flex: 1;
 }
