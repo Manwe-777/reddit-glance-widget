@@ -20,6 +20,7 @@
   --gap: 10px;
 
   --color-primary: hsl(43, 50%, 70%);
+  --color-sub: hsl(23, 100%, 65%); /* subreddit-label accent (was #FF914D) */
   --color-positive: hsl(140, 40%, 55%);
   --color-negative: hsl(0, 70%, 60%);
   --color-background: hsl(var(--bghs), var(--bgl));
@@ -46,6 +47,7 @@
   --bgh: 240; --bgs: 13%; --bgl: 95%;
   --cm: 1; --tsm: 1;
   --color-primary: hsl(230, 100%, 30%);
+  --color-sub: hsl(23, 90%, 45%); /* darker orange for contrast on light bg */
   --color-negative: hsl(0, 70%, 50%);
 }
 
@@ -269,12 +271,12 @@ body {
   gap: 0.4rem;
   margin-top: 0.4rem;
   font-size: var(--font-size-h6);
-  color: var(--color-text-primary);
+  color: var(--color-text-base);
 }
 .post-meta .dot { opacity: 0.5; }
 .post-meta .score { color: var(--color-positive); font-weight: 600;}
 .post-meta .sub {
-  color: #FF914D;
+  color: var(--color-sub);
   opacity: 0.85;
 }
 .post-meta .flair {
@@ -384,4 +386,11 @@ body {
   display: block;
   min-width: 0;
   flex: 1;
+}
+
+/* Group-by toggle is greyed out while a single-subreddit tab is active,
+   where grouping has no effect. */
+.checkbox-label.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
