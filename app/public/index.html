@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reddit</title>
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    // Apply cached Glance theme immediately to prevent a flash of the wrong
+    // scheme. Mirrors the mechanism used by the homelab-bookmarks widget:
+    // Glance's glance-theme-broadcast.js posts the active theme vars to every
+    // iframe; we cache them in localStorage and re-apply on load.
+    (function() {
+      var KEY = 'glanceThemeCache';
+      var vars = ['bgh','bgs','bgl','cm','tsm'];
+      var colors = ['primary','positive','negative'];
+
+      function apply(gt) {
+        var r = document.documentElement.style;
+        if (gt.scheme === 'light') {
+          r.setProperty('--scheme', '100% -');
+          document.documentElement.setAttribute('data-theme', 'light');
+        } else {
+          r.setProperty('--scheme', ' ');
+          document.documentElement.removeAttribute('data-theme');
+        }
+        vars.forEach(function(k) { if (gt[k]) r.setProperty('--' + k, gt[k]); });
+        colors.forEach(function(k) { if (gt[k]) r.setProperty('--color-' + k, gt[k]); });
+      }
+
+      try {
+        var cached = JSON.parse(localStorage.getItem(KEY));
+        if (cached) apply(cached);
+      } catch(e) {}
+
+      window.addEventListener('message', function(e) {
+        if (e.data && e.data.glanceTheme) {
+          var gt = e.data.glanceTheme;
+          apply(gt);
+          try { localStorage.setItem(KEY, JSON.stringify(gt)); } catch(e) {}
+        }
+      });
+    })();
+  </script>
+</head>
+<body>
+  <div class="container">
+    <button id="settings-toggle" class="settings-toggle" title="Settings">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </svg>
+    </button>
+
+    <div id="settings-panel" class="settings-panel hidden">
+      <div class="settings-top">
+        <label class="checkbox-label">
+          <input type="checkbox" id="group-by-sub">
+          <span>Group by subreddit</span>
+        </label>
+        <div class="settings-group">
+          <span class="settings-label">Max posts</span>
+          <input type="number" id="max-posts" min="1" max="100" value="25">
+        </div>
+      </div>
+
+      <div class="settings-ignored">
+        <span class="settings-label">Show subreddits</span>
+        <div id="sub-list" class="sub-list"></div>
+      </div>
+
+      <div class="settings-actions">
+        <span id="settings-note" class="settings-note"></span>
+        <button id="close-settings" class="btn-primary">Done</button>
+      </div>
+    </div>
+
+    <div id="feed" class="feed"></div>
+    <div id="loading" class="loading">Loading…</div>
+    <div id="error" class="error hidden"></div>
+    <div id="footer" class="footer hidden">
+      <span id="updated" class="updated"></span>
+      <button id="refresh" class="refresh" title="Reload from cache">↻</button>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

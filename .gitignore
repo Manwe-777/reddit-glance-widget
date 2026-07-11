@@ -1,0 +1,11 @@
+# Secrets & local state — never commit these.
+.env
+reddit_cookie.txt
+
+# Runtime cache (keep the empty dir, ignore its contents)
+cache/*
+!cache/.gitkeep
+
+# Python
+*.pyc
+__pycache__/
