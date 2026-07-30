@@ -4,6 +4,9 @@ services:
     # Or, once published:  image: ghcr.io/manwe-777/reddit-glance-widget:latest
     container_name: reddit-glance-widget
     restart: unless-stopped
+    # Run as the host user so the read-only 600 cookie file (owned by uid 1000)
+    # is readable and ./cache (also uid 1000) stays writable.
+    user: "1000:1000"
     ports:
       # Host port is 8091 by default because Glance usually occupies 8080.
       # Override with WIDGET_PORT in .env. Container always listens on 8080.
@@ -14,13 +17,11 @@ services:
     volumes:
       # Persists the cache so restarts don't trigger a fresh burst of requests.
       - ./cache:/data
-      # OPTIONAL — supply the cookie from a file instead of REDDIT_COOKIE in .env
-      # (handy for very long cookie blobs). To use it:
-      #   1) create the file:  echo 'reddit_session=...' > reddit_cookie.txt
-      #   2) uncomment the volume line below AND the environment block
-      # - ./reddit_cookie.txt:/run/secrets/reddit_cookie:ro
-    # environment:
-    #   REDDIT_COOKIE_FILE: /run/secrets/reddit_cookie
+      # Cookie supplied from a file (kept out of `docker inspect`, handy for the
+      # long cookie blob). reddit_cookie.txt is git-ignored.
+      - ./reddit_cookie.txt:/run/secrets/reddit_cookie:ro
+    environment:
+      REDDIT_COOKIE_FILE: /run/secrets/reddit_cookie
     # If you run Glance in the same compose/network, reference this service by
     # name in Glance:  source: http://reddit-glance-widget:8080/
 
