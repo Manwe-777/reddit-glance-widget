@@ -44,8 +44,9 @@ def _post_li(post, show_subreddit):
     title = _escape(post["title"])
     link = _escape(post["permalink"])
     meta = []
-    meta.append('<li>%s</li>' % _fmt_score(post["score"]))
-    meta.append('<li>%d comments</li>' % post["comments"])
+    if post.get("source") != "rss":
+        meta.append('<li>%s</li>' % _fmt_score(post["score"]))
+        meta.append('<li>%d comments</li>' % post["comments"])
     if show_subreddit:
         meta.append('<li><a href="https://www.reddit.com/r/%s" target="_blank" rel="noreferrer">r/%s</a></li>'
                     % (_escape(post["subreddit"]), _escape(post["subreddit"])))

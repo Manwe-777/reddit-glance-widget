@@ -216,6 +216,16 @@ Cookies expire eventually; if you start seeing `403`s in `/api/status`, refresh
 the cookie. Because requests are so infrequent (once per sub / couple hours), a
 session cookie tends to last a long time.
 
+> **`403` — "You've been blocked by network security".** This is a network-level
+> block, not an expired cookie: Reddit is refusing the `.json` endpoints (and
+> `oauth.reddit.com`) for this egress IP while still serving the Atom feeds.
+> A fresh cookie or User-Agent will not fix it, and `old.reddit.com` just
+> redirects to the login page. The app detects the first JSON `403` and falls
+> back to `<sub>/<sort>.rss` for the rest of the process, so posts keep flowing.
+> RSS carries no score/comment counts, and the feeds are rate-limited to roughly
+> one request/minute — which is why the default request gap is 75–100s. If you
+> see `429`s, widen `MIN_REQUEST_GAP`/`MAX_REQUEST_GAP` further.
+
 ---
 
 ## Configuration reference
@@ -231,7 +241,7 @@ All via environment variables (see `.env.example`):
 | `SHOW_NSFW` | `false` | Include NSFW posts |
 | `REFRESH_INTERVAL` | `7200` | Seconds between refetches of one sub (2h) |
 | `REFRESH_JITTER` | `900` | ± random jitter on each sub's schedule |
-| `MIN_REQUEST_GAP` / `MAX_REQUEST_GAP` | `20` / `50` | Enforced spacing between any two Reddit requests |
+| `MIN_REQUEST_GAP` / `MAX_REQUEST_GAP` | `75` / `100` | Enforced spacing between any two Reddit requests (RSS is rate-limited) |
 | `ERROR_BACKOFF` | `900` | Backoff after a failed fetch |
 | `USER_AGENT` | Chrome UA | Should match your cookie's browser |
 | `REDDIT_COOKIE` / `REDDIT_COOKIE_FILE` | — | Session cookie (inline or file) |
@@ -244,7 +254,7 @@ All via environment variables (see `.env.example`):
 - The scheduler wakes every ~15s and fetches **at most one** overdue subreddit,
   then refuses to make another request for `MIN..MAX_REQUEST_GAP` seconds.
 - Net effect: with N subreddits you make ~N requests every ~2h, each separated
-  by 20–50s — never a burst, even right after boot or a config change.
+  by 75–100s — never a burst, even right after boot or a config change.
 
 ---
 

@@ -43,7 +43,9 @@ _CONTENT_TYPES = {
 
 
 def _sort_posts(posts):
-    if config.SORT == "new":
+    # RSS-sourced posts carry no score, so fall back to recency for ordering.
+    has_scores = any(p.get("score", 0) for p in posts)
+    if config.SORT == "new" or not has_scores:
         return sorted(posts, key=lambda p: p.get("created_utc", 0), reverse=True)
     return sorted(posts, key=lambda p: p.get("score", 0), reverse=True)
 

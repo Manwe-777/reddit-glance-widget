@@ -101,12 +101,15 @@ function postHtml(p, showSub) {
   const domain = (!p.is_self && p.domain)
     ? ` <span class="post-domain">(${escapeHtml(p.domain)})</span>` : '';
   const meta = [];
-  meta.push(`<span class="score">${fmtScore(p.score)}</span>`);
-  meta.push(`<span class="dot">·</span><span>${p.comments} comments</span>`);
-  if (showSub) meta.push(`<span class="dot">·</span><span class="sub">r/${escapeHtml(p.subreddit)}</span>`);
+  if (p.source !== 'rss') {
+    meta.push(`<span class="score">${fmtScore(p.score)}</span>`);
+    meta.push(`<span>${p.comments} comments</span>`);
+  }
+  if (showSub) meta.push(`<span class="sub">r/${escapeHtml(p.subreddit)}</span>`);
   if (p.flair) meta.push(`<span class="flair">${escapeHtml(p.flair)}</span>`);
   const when = timeAgo(p.created_utc);
-  if (when) meta.push(`<span class="dot">·</span><span>${when}</span>`);
+  if (when) meta.push(`<span>${when}</span>`);
+  const metaHtml = meta.join('<span class="dot">·</span>');
 
   const badThumbs = new Set(['self', 'default', 'nsfw', 'spoiler', 'image', '']);
   const hasThumb = p.thumbnail && !badThumbs.has(p.thumbnail);
@@ -119,7 +122,7 @@ function postHtml(p, showSub) {
       ${thumb}
       <span class="post-body">
         <span class="post-title">${escapeHtml(p.title)}${domain}</span>
-        <span class="post-meta">${meta.join('')}</span>
+        <span class="post-meta">${metaHtml}</span>
       </span>
     </a>`;
 }
