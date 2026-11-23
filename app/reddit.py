@@ -1,38 +1,42 @@
-"""Fetches and normalizes posts from Reddit's public web endpoints.
+"""Fetches and normalizes posts by scraping old.reddit.com HTML listings.
 
-We use the plain web endpoints (www.reddit.com/r/<sub>/<sort>.json) with
-browser-like headers + an optional session cookie rather than the OAuth API,
-because the goal is to look like an ordinary logged-in browser making the
-occasional request. Combined with the low request rate in the scheduler, this
-keeps us under Reddit's throttle radar.
+Reddit's JSON endpoints (/r/<sub>/<sort>.json, and oauth.reddit.com) are
+commonly blocked from datacenter / VPS egress IPs with a 403 "You've been
+blocked by network security" page, while the classic old.reddit.com HTML
+listing keeps working. So instead of the JSON API (with an Atom/RSS fallback),
+we fetch the old.reddit listing page for each subreddit and read the
+machine-readable data-* attributes Reddit puts on every `div.thing`.
 
-Some networks get a hard "You've been blocked by network security" 403 on the
-.json endpoints (and on oauth.reddit.com) while the Atom/RSS feeds keep working.
-When that happens we transparently fall back to <sub>/<sort>.rss, which has no
-score/comment counts but carries titles, links, authors, timestamps and
-thumbnails.
+The old.reddit markup carries everything we need without a parser dependency:
+data-fullname, data-author, data-subreddit, data-score, data-comments-count,
+data-timestamp, data-permalink, data-url, data-domain, data-nsfw. The title,
+link flair and thumbnail are read from the post's inner elements.
 """
 import gzip
 import html
 import io
-import json
 import re
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import xml.etree.ElementTree as ET
-from datetime import datetime
 
 import config
 
-_ATOM_NS = "http://www.w3.org/2005/Atom"
-_MEDIA_NS = "http://search.yahoo.com/mrss/"
-
-# Reddit blocks the .json endpoints from some networks ("You've been blocked by
-# network security") while still serving the Atom/RSS feeds. Once we see that
-# block, stop trying JSON for the rest of this process and go straight to RSS.
-_json_blocked = False
+# One `<div class=" thing ...` per listing item, with the data-* attributes we
+# need on the opening tag. Attributes never contain ">", so [^>]* is safe.
+_THING_RE = re.compile(
+    r'<div class=" thing[^"]*"[^>]*data-fullname="t3_([a-z0-9]+)"[^>]*>',
+    re.S,
+)
+_ATTR_RE = re.compile(r'\bdata-([a-z-]+)="([^"]*)"')
+_TITLE_RE = re.compile(r'<a[^>]*class="title[^"]*"[^>]*>(.*?)</a>', re.S)
+_FLAIR_RE = re.compile(r'<span class="linkflairlabel[^"]*"[^>]*>(.*?)</span>', re.S)
+_THUMB_ANCHOR_RE = re.compile(
+    r'<a[^>]*class="[^"]*thumbnail[^"]*"[^>]*>(.*?)</a>', re.S
+)
+_IMG_SRC_RE = re.compile(r'<img[^>]*\bsrc="([^"]+)"', re.S)
+_TAG_RE = re.compile(r"<[^>]+>")
 
 
 class FetchError(Exception):
@@ -43,42 +47,29 @@ class FetchError(Exception):
 
 def _build_url(subreddit):
     sort = config.SORT if config.SORT in ("hot", "new", "top", "rising") else "hot"
-    url = "%s/r/%s/%s.json?limit=%d&raw_json=1" % (
+    url = "%s/r/%s/%s/" % (
         config.REDDIT_BASE.rstrip("/"),
         urllib.parse.quote(subreddit),
         sort,
-        max(1, config.POSTS_PER_SUB),
     )
     if sort == "top":
-        url += "&t=%s" % config.TOP_PERIOD
+        url += "?t=%s" % config.TOP_PERIOD
     return url
 
 
-def _rss_url(subreddit):
-    sort = config.SORT if config.SORT in ("hot", "new", "top", "rising") else "hot"
-    url = "%s/r/%s/%s.rss?limit=%d" % (
-        config.REDDIT_BASE.rstrip("/"),
-        urllib.parse.quote(subreddit),
-        sort,
-        max(1, config.POSTS_PER_SUB),
-    )
-    if sort == "top":
-        url += "&t=%s" % config.TOP_PERIOD
-    return url
-
-
-def _headers(accept="application/json, text/plain, */*"):
-    """Headers that mirror a real browser navigation to reddit."""
+def _headers():
+    """Headers that mirror a real browser navigation to old.reddit.com."""
     h = {
         "User-Agent": config.USER_AGENT,
-        "Accept": accept,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "gzip, deflate",
         "Referer": "%s/" % config.REDDIT_BASE.rstrip("/"),
         "Connection": "keep-alive",
-        "Sec-Fetch-Dest": "empty",
-        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
         "Sec-Fetch-Site": "same-origin",
+        "Upgrade-Insecure-Requests": "1",
         "DNT": "1",
     }
     if config.REDDIT_COOKIE:
@@ -93,106 +84,8 @@ def _read_body(resp):
     return raw.decode("utf-8", errors="replace")
 
 
-def _thumbnail(data):
-    thumb = data.get("thumbnail") or ""
-    if thumb.startswith("http"):
-        return thumb
-    # Fall back to a preview image if available.
-    try:
-        images = data["preview"]["images"]
-        if images:
-            src = images[0]["source"]["url"]
-            return src.replace("&amp;", "&")
-    except (KeyError, IndexError, TypeError):
-        pass
-    return ""
-
-
-def _normalize(child, subreddit):
-    d = child.get("data", {})
-    permalink = d.get("permalink", "")
-    return {
-        "id": d.get("id", ""),
-        "title": d.get("title", "").strip(),
-        "subreddit": d.get("subreddit", subreddit),
-        "author": d.get("author", ""),
-        "score": int(d.get("score", 0) or 0),
-        "comments": int(d.get("num_comments", 0) or 0),
-        "created_utc": float(d.get("created_utc", 0) or 0),
-        "permalink": "https://www.reddit.com" + permalink if permalink else d.get("url", ""),
-        "url": d.get("url", ""),
-        "domain": d.get("domain", ""),
-        "flair": (d.get("link_flair_text") or "").strip(),
-        "thumbnail": _thumbnail(d),
-        "is_self": bool(d.get("is_self", False)),
-        "over_18": bool(d.get("over_18", False)),
-        "stickied": bool(d.get("stickied", False)),
-        "source": "json",
-    }
-
-
-def _parse_iso(value):
-    if not value:
-        return 0.0
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
-    except ValueError:
-        return 0.0
-
-
-def _extract_link(content):
-    """Pull the external target out of an Atom entry's HTML content.
-
-    Reddit's RSS always links to the comments page in <link>, and for link
-    posts the actual target appears as an <a href="...">[link]</a> in the
-    content HTML. Self posts point that anchor back at the permalink.
-    """
-    if not content:
-        return ""
-    match = re.search(r'<a href="([^"]+)">\[link\]', html.unescape(content))
-    return match.group(1) if match else ""
-
-
-def _normalize_rss(entry, subreddit, ns):
-    entry_id = entry.findtext("a:id", default="", namespaces=ns) or ""
-    post_id = entry_id[3:] if entry_id.startswith("t3_") else entry_id
-    link = entry.find("a:link", ns)
-    permalink = link.get("href", "") if link is not None else ""
-    author = (entry.findtext("a:author/a:name", default="", namespaces=ns) or "").strip()
-    if author.startswith("/u/"):
-        author = author[3:]
-    content = entry.findtext("a:content", default="", namespaces=ns) or ""
-    external = _extract_link(content)
-    host = urllib.parse.urlparse(external).netloc.lower() if external else ""
-    is_self = not external or external == permalink or host == "reddit.com" or host.endswith(".reddit.com")
-    thumb = entry.find("media:thumbnail", ns)
-    category = entry.find("a:category", ns)
-    sub = (category.get("term") if category is not None else "") or subreddit
-    if sub == "multi":
-        sub = subreddit
-    return {
-        "id": post_id,
-        "title": (entry.findtext("a:title", default="", namespaces=ns) or "").strip(),
-        "subreddit": sub,
-        "author": author,
-        # Atom feeds don't carry score or comment counts.
-        "score": 0,
-        "comments": 0,
-        "created_utc": _parse_iso(entry.findtext("a:updated", default="", namespaces=ns)),
-        "permalink": permalink,
-        "url": permalink if is_self else external,
-        "domain": "" if is_self else urllib.parse.urlparse(external).netloc,
-        "flair": "",
-        "thumbnail": thumb.get("url", "") if thumb is not None else "",
-        "is_self": is_self,
-        "over_18": False,
-        "stickied": False,
-        "source": "rss",
-    }
-
-
-def _get(url, subreddit, accept):
-    req = urllib.request.Request(url, headers=_headers(accept), method="GET")
+def _get(url, subreddit):
+    req = urllib.request.Request(url, headers=_headers(), method="GET")
     try:
         with urllib.request.urlopen(req, timeout=config.REQUEST_TIMEOUT) as resp:
             return _read_body(resp)
@@ -204,6 +97,72 @@ def _get(url, subreddit, accept):
         raise FetchError("unexpected error for r/%s: %s" % (subreddit, e))
 
 
+def _clean_text(value):
+    """Strip tags, collapse whitespace and unescape HTML entities."""
+    text = _TAG_RE.sub("", value or "")
+    return re.sub(r"\s+", " ", html.unescape(text)).strip()
+
+
+def _attrs(tag):
+    return {name: value for name, value in _ATTR_RE.findall(tag)}
+
+
+def _thumbnail(block):
+    anchor = _THUMB_ANCHOR_RE.search(block)
+    scope = anchor.group(1) if anchor else block
+    match = _IMG_SRC_RE.search(scope)
+    if not match:
+        return ""
+    src = html.unescape(match.group(1)).strip()
+    if src.startswith("//"):
+        src = "https:" + src
+    elif src.startswith("/"):
+        src = config.REDDIT_BASE.rstrip("/") + src
+    return src
+
+
+def _absolute(path):
+    if not path:
+        return ""
+    if path.startswith("//"):
+        return "https:" + path
+    if path.startswith("/"):
+        return config.REDDIT_BASE.rstrip("/") + path
+    return path
+
+
+def _normalize(block, tag, subreddit):
+    attrs = _attrs(tag)
+    domain = attrs.get("domain", "")
+    if domain in ("old.reddit.com", "www.reddit.com", "reddit.com"):
+        domain = "reddit.com"
+    permalink = _absolute(attrs.get("permalink", ""))
+    url = _absolute(attrs.get("url", ""))
+    is_self = domain.startswith("self.") or " self " in tag
+    if is_self or not url:
+        url = permalink
+    title_match = _TITLE_RE.search(block)
+    flair_match = _FLAIR_RE.search(block)
+    return {
+        "id": attrs.get("fullname", "")[3:],
+        "title": _clean_text(title_match.group(1)) if title_match else "",
+        "subreddit": attrs.get("subreddit") or subreddit,
+        "author": attrs.get("author", ""),
+        "score": int(attrs.get("score", 0) or 0),
+        "comments": int(attrs.get("comments-count", 0) or 0),
+        "created_utc": float(attrs.get("timestamp", 0) or 0) / 1000.0,
+        "permalink": permalink,
+        "url": url,
+        "domain": domain,
+        "flair": _clean_text(flair_match.group(1)) if flair_match else "",
+        "thumbnail": _thumbnail(block),
+        "is_self": is_self,
+        "over_18": attrs.get("nsfw", "").lower() == "true",
+        "stickied": "stickied" in tag,
+        "source": "html",
+    }
+
+
 def _result(subreddit, posts):
     return {
         "subreddit": subreddit,
@@ -213,62 +172,32 @@ def _result(subreddit, posts):
     }
 
 
-def _fetch_json(subreddit):
-    body = _get(_build_url(subreddit), subreddit, "application/json, text/plain, */*")
-    try:
-        payload = json.loads(body)
-        children = payload["data"]["children"]
-    except (ValueError, KeyError, TypeError):
-        # Reddit sometimes returns an HTML block/login page on soft-blocks.
-        raise FetchError("unparseable response for r/%s (possible block)" % subreddit)
+def fetch(subreddit):
+    """Fetch and normalize posts for one subreddit. Raises FetchError on failure."""
+    body = _get(_build_url(subreddit), subreddit)
+    if "blocked by network security" in body or "reason=lor2" in body:
+        raise FetchError("blocked for r/%s (network security / login wall)" % subreddit, status=403)
 
+    # Drop <script> blocks first so report/dialog templates (which also contain
+    # `thing` divs) don't get mistaken for posts.
+    body = re.sub(r"<script.*?</script>", "", body, flags=re.S)
+
+    matches = list(_THING_RE.finditer(body))
     posts = []
-    for child in children:
-        if child.get("kind") != "t3":
+    for i, match in enumerate(matches):
+        start = match.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(body)
+        block = body[start:end]
+        tag = match.group(0)
+        if 'data-promoted="true"' in tag:
             continue
-        post = _normalize(child, subreddit)
+        post = _normalize(block, tag, subreddit)
+        if not post["title"]:
+            continue
         if post["over_18"] and not config.SHOW_NSFW:
             continue
         posts.append(post)
-    return _result(subreddit, posts)
 
-
-def _fetch_rss(subreddit):
-    body = _get(
-        _rss_url(subreddit),
-        subreddit,
-        "application/atom+xml, application/xml;q=0.9, */*;q=0.8",
-    )
-    try:
-        root = ET.fromstring(body)
-    except ET.ParseError:
-        raise FetchError("unparseable RSS for r/%s (possible block)" % subreddit)
-    ns = {"a": _ATOM_NS, "media": _MEDIA_NS}
-    posts = []
-    for entry in root.findall("a:entry", ns):
-        post = _normalize_rss(entry, subreddit, ns)
-        if post["title"]:
-            posts.append(post)
     if not posts:
-        raise FetchError("empty RSS for r/%s (possible block)" % subreddit)
+        raise FetchError("empty listing for r/%s (possible block)" % subreddit)
     return _result(subreddit, posts)
-
-
-def fetch(subreddit):
-    """Fetch and normalize posts for one subreddit. Raises FetchError on failure.
-
-    Tries the JSON endpoint first, but falls back to the Atom feed when Reddit
-    blocks JSON from this network. After the first 403 we skip JSON for the
-    lifetime of the process so we don't waste a request per subreddit.
-    """
-    global _json_blocked
-    if not _json_blocked:
-        try:
-            return _fetch_json(subreddit)
-        except FetchError as e:
-            if e.status == 403 or "unparseable" in str(e):
-                _json_blocked = True
-                print("[reddit] JSON endpoint blocked; using RSS from now on", flush=True)
-            else:
-                raise
-    return _fetch_rss(subreddit)

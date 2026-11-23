@@ -8,6 +8,8 @@ viewing / testing in a browser.
 import html
 import time
 
+import config
+
 
 def _escape(s):
     return html.escape(s or "", quote=True)
@@ -48,8 +50,8 @@ def _post_li(post, show_subreddit):
         meta.append('<li>%s</li>' % _fmt_score(post["score"]))
         meta.append('<li>%d comments</li>' % post["comments"])
     if show_subreddit:
-        meta.append('<li><a href="https://www.reddit.com/r/%s" target="_blank" rel="noreferrer">r/%s</a></li>'
-                    % (_escape(post["subreddit"]), _escape(post["subreddit"])))
+        meta.append('<li><a href="%s/r/%s" target="_blank" rel="noreferrer">r/%s</a></li>'
+                    % (_escape(config.REDDIT_BASE.rstrip("/")), _escape(post["subreddit"]), _escape(post["subreddit"])))
     if post.get("flair"):
         meta.append('<li>%s</li>' % _escape(post["flair"]))
     when = _time_ago(post["created_utc"])

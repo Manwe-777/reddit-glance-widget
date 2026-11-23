@@ -65,7 +65,7 @@ USER_AGENT = _get(
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
 )
 REDDIT_COOKIE = _read_cookie()
-REDDIT_BASE = _get("REDDIT_BASE", "https://www.reddit.com")
+REDDIT_BASE = _get("REDDIT_BASE", "https://old.reddit.com")
 REQUEST_TIMEOUT = _get_int("REQUEST_TIMEOUT", 20)
 
 # --- Persistence ----------------------------------------------------------

@@ -8,6 +8,10 @@ instantly on every dashboard refresh.
 It exists because Glance's built-in Reddit widget gets `403`-blocked from
 datacenter / VPS IPs. This server sidesteps that by:
 
+- **Scraping old.reddit.com HTML listings.** Reddit commonly 403s the `.json`
+  endpoints (and `oauth.reddit.com`) from datacenter / VPS egress IPs, while the
+  classic `old.reddit.com/r/<sub>/<sort>/` HTML pages keep working. Each post's
+  `data-*` attributes carry the score, comment count, author, timestamp, etc.
 - **Looking like a real logged-in browser.** You supply your Reddit session
   cookie and a matching User-Agent, so requests look ordinary.
 - **Almost never hitting Reddit.** A background scheduler fetches each subreddit
@@ -217,14 +221,13 @@ the cookie. Because requests are so infrequent (once per sub / couple hours), a
 session cookie tends to last a long time.
 
 > **`403` — "You've been blocked by network security".** This is a network-level
-> block, not an expired cookie: Reddit is refusing the `.json` endpoints (and
-> `oauth.reddit.com`) for this egress IP while still serving the Atom feeds.
-> A fresh cookie or User-Agent will not fix it, and `old.reddit.com` just
-> redirects to the login page. The app detects the first JSON `403` and falls
-> back to `<sub>/<sort>.rss` for the rest of the process, so posts keep flowing.
-> RSS carries no score/comment counts, and the feeds are rate-limited to roughly
-> one request/minute — which is why the default request gap is 75–100s. If you
-> see `429`s, widen `MIN_REQUEST_GAP`/`MAX_REQUEST_GAP` further.
+> block, not an expired cookie: Reddit refuses the `.json` endpoints (and
+> `oauth.reddit.com`) for this egress IP. This is why the widget scrapes the
+> `old.reddit.com` HTML listings instead — they are still served from blocked
+> IPs. If old.reddit also starts returning the block page, a fresh cookie +
+> matching User-Agent from a logged-in browser is the first thing to try. The
+> default request gap of 75–100s keeps the request rate low; widen
+> `MIN_REQUEST_GAP`/`MAX_REQUEST_GAP` if you see `429`s.
 
 ---
 
@@ -241,9 +244,10 @@ All via environment variables (see `.env.example`):
 | `SHOW_NSFW` | `false` | Include NSFW posts |
 | `REFRESH_INTERVAL` | `7200` | Seconds between refetches of one sub (2h) |
 | `REFRESH_JITTER` | `900` | ± random jitter on each sub's schedule |
-| `MIN_REQUEST_GAP` / `MAX_REQUEST_GAP` | `75` / `100` | Enforced spacing between any two Reddit requests (RSS is rate-limited) |
+| `MIN_REQUEST_GAP` / `MAX_REQUEST_GAP` | `75` / `100` | Enforced spacing between any two Reddit requests |
 | `ERROR_BACKOFF` | `900` | Backoff after a failed fetch |
 | `USER_AGENT` | Chrome UA | Should match your cookie's browser |
+| `REDDIT_BASE` | `https://old.reddit.com` | Site whose HTML listings are scraped |
 | `REDDIT_COOKIE` / `REDDIT_COOKIE_FILE` | — | Session cookie (inline or file) |
 | `PORT` | `8080` | Listen port |
 | `CACHE_FILE` | `/data/cache.json` | Persistent cache path |
@@ -281,7 +285,7 @@ reddit-glance-widget/
 ├── app/
 │   ├── server.py      # HTTP server + routing + static file serving
 │   ├── scheduler.py   # background refresh loop (throttle logic)
-│   ├── reddit.py      # fetch + normalize Reddit JSON
+│   ├── reddit.py      # scrape + normalize old.reddit.com HTML listings
 │   ├── cache.py       # thread-safe cache w/ disk persistence
 │   ├── render.py      # Glance `extension` HTML fragment rendering
 │   ├── config.py      # env-based config
